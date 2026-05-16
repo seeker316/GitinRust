@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-mod sha1;
 mod gitfns;
 //derive is used to invoke the macros
 #[derive(Parser)] //tells clap, to genrate a cli for this struct,
@@ -15,21 +14,42 @@ struct Cli{
 #[derive(Subcommand)] //tells clap each enum is a subcommand variant.
 enum Commands {
     Add,
-    CatFile,
+    CatFile {
+        #[arg(value_parser = ["blob", "commit", "tag", "tree"])]
+        object_type: String;
+        object: String;
+    },
+
     CheckIgnore,
     Checkout,
     Commit,
-    HashObject,
+    HashObject {
+        #[arg(
+            short = 't',
+            default_value = "blob",
+            value_parser = ["blob","commit", "tag", "tree"]
+        )]
+        object_type: String,
 
-    Init {
-        #[arg(default_value = ".")]
+        #[arg(short = "w")]
+        write: bool,
         path: String,
     },
 
-    Log,
+Init {
+        #[arg(default_value = ".")]
+        path: String,
+    },      
+
+    Log {
+        #[arg( 
+            default_value = "HEAD",
+            )]
+        commit: String
+    },
     LsFiles,
     LsTree,
-    RevParse,
+    RevParse,   
     Rm,
     ShowRef,
     Status,
@@ -48,8 +68,11 @@ fn main(){
         Commands::Add =>
             println!("git add"),
 
-        Commands::CatFile =>
-            println!("git cat-file"),
+        Commands::CatFile {object_type, object} => {
+            println!("git cat-file");
+            repo = gitfns::repo_find(["."],true);
+            gitobj::cat_file(&repo, &object, &object_type);
+        }
 
         Commands::CheckIgnore =>
             println!("git check-ignore"),
@@ -60,10 +83,25 @@ fn main(){
         Commands::Commit =>
             println!("git commit"),
 
-        Commands::HashObject =>
-            println!("git hash-object"),
+        Commands::HashObject {object_type, write, path}=>{
+            let repo = if write {
+                Some(gitfns::repo_find(["."],true).unwrap()); 
+            }
+            else{
+                None
+            };
 
+            let sha = gitobj::object_hash(
+                &path,
+                &object_type,
+                repo.as_ref(),
+            ).unwrap();
+            println!("{}", sha);
+            println!("git hash-object"),
+        }
         Commands::Log =>
+            repo = gitfns::repo_find(["."],true);
+            
             println!("git log"),
 
         Commands::LsFiles =>

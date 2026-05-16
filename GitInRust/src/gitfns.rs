@@ -3,6 +3,8 @@ use std::path::{Path, PathBuf};
 use configparser::ini::Ini;
 use std::io;
 
+use flate2::reader::ZlibDecoder;
+
 pub struct GitRepo{
     worktree: PathBuf,
     gitdir: PathBuf,
@@ -70,6 +72,28 @@ pub fn repo_create(path : impl AsRef<Path>)->io::Result<GitRepo>
 
 }
 
+pub fn repo_find(path : impl AsRef<Path>, required : bool)->io::Result<GitRepo> {
+    path = fs::canonicalize(path)?;
+    if path.join(".git").is_dir(){
+        return Ok(Some(GitRepo::new(path)?));
+    }
+
+    let parent = match path.parent(){
+        Some(p) => p,
+        None => {
+            if required {
+                return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "No git directory",
+                ));
+            } else {
+                return Ok(None);
+            }
+        }
+    };
+    
+    repo_find(parent, required);
+}
 
 
 impl GitRepo{
