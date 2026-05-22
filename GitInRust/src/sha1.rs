@@ -1,18 +1,18 @@
 use std::convert::TryInto;
 
-fn main() {
-    let input = b"hellowold";
-    
-    println!("Input string: {}", std::str::from_utf8(input).unwrap());
-    let mut output = [0u8; 20];
-
-    sha1(&mut output, input);
-
-    for byte in &output {
-        print!("{:02x}",byte);
-    }
-    println!();
-}
+// fn main() {
+//     let input = b"hellowold";
+//
+//     println!("Input string: {}", std::str::from_utf8(input).unwrap());
+//     let mut output = [0u8; 20];
+//
+//     sha1(&mut output, input);
+//
+//     for byte in &output {
+//         print!("{:02x}",byte);
+//     }
+//     println!();
+// }
 
 struct Sha1Ctx {
     state: [u32; 5],
@@ -20,7 +20,7 @@ struct Sha1Ctx {
     buffer: [u8; 64]
 }
 
-fn sha1(hash_out: &mut [u8; 20], input: &[u8]){
+pub fn sha1(hash_out: &mut [u8; 20], input: &[u8]){
     
     let mut ctx = Sha1Ctx {
         state: [0; 5],

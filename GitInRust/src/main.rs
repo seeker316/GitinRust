@@ -1,5 +1,9 @@
 use clap::{Parser, Subcommand};
+use std::fs;
+use std::path::{Path, PathBuf};
 mod gitfns;
+mod gitobj;
+mod sha1;
 //derive is used to invoke the macros
 #[derive(Parser)] //tells clap, to genrate a cli for this struct,
 #[command(name = "gir")]
@@ -16,12 +20,15 @@ enum Commands {
     Add,
     CatFile {
         #[arg(value_parser = ["blob", "commit", "tag", "tree"])]
-        object_type: String;
-        object: String;
+        object_type: String,
+        object: String,
     },
 
     CheckIgnore,
-    Checkout,
+    Checkout {
+        commit : String,    
+        path : String,
+    },
     Commit,
     HashObject {
         #[arg(
@@ -31,7 +38,7 @@ enum Commands {
         )]
         object_type: String,
 
-        #[arg(short = "w")]
+        #[arg(short = 'w')]
         write: bool,
         path: String,
     },
@@ -48,12 +55,25 @@ Init {
         commit: String
     },
     LsFiles,
-    LsTree,
+    LsTree{
+        #[arg(short = 'r')]
+        recursive: bool,
+        tree : String,
+    },
     RevParse,   
     Rm,
     ShowRef,
     Status,
-    Tag,
+    Tag{
+        #[arg(short = 'a', long = "annotate")]
+        create_tag_object: bool,
+
+        name: String,
+        
+        #[arg(default_value = "HEAD",)]
+        object: String,
+
+    },
 }
 
 fn main(){
@@ -70,22 +90,24 @@ fn main(){
 
         Commands::CatFile {object_type, object} => {
             println!("git cat-file");
-            repo = gitfns::repo_find(["."],true);
-            gitobj::cat_file(&repo, &object, &object_type);
+            let repo = gitfns::repo_find(".",true).unwrap();
+            gitobj::cat_file(&repo, &object, object_type);
         }
 
         Commands::CheckIgnore =>
             println!("git check-ignore"),
 
-        Commands::Checkout =>
-            println!("git checkout"),
-
+        Commands::Checkout {commit, path} => {
+            let repo = gitfns::repo_find(".",true).unwrap();                     gitobj::git_checkout(&repo, &commit, &path);
+            println!("git checkout")
+        }
+            
         Commands::Commit =>
             println!("git commit"),
 
         Commands::HashObject {object_type, write, path}=>{
             let repo = if write {
-                Some(gitfns::repo_find(["."],true).unwrap()); 
+                Some(gitfns::repo_find(".",true).unwrap()) 
             }
             else{
                 None
@@ -97,33 +119,55 @@ fn main(){
                 repo.as_ref(),
             ).unwrap();
             println!("{}", sha);
-            println!("git hash-object"),
+            println!("git hash-object");
         }
-        Commands::Log =>
-            repo = gitfns::repo_find(["."],true);
-            
-            println!("git log"),
+        Commands::Log {commit} =>{
+            let repo = gitfns::repo_find(".",true).unwrap();
+            let sha = gitobj::object_find(&repo, &commit, None, true);
+            let mut seen = gitobj::HashSet::new();
 
+            gitobj::log_graphviz(&repo, &sha, &mut seen).unwrap();
+
+            println!("git log");
+        }
         Commands::LsFiles =>
             println!("git ls-files"),
 
-        Commands::LsTree =>
-            println!("git ls-tree"),
+        Commands::LsTree {recursive, tree} => {
+            let repo = gitfns::repo_find(".",true).unwrap();
+            gitobj::ls_tree(&repo,&tree,recursive,String::new());
+            println!("git ls-tree");
 
+        } 
         Commands::RevParse =>
             println!("git rev-parse"),
 
         Commands::Rm =>
             println!("git rm"),
 
-        Commands::ShowRef =>
-            println!("git show-ref"),
+        Commands::ShowRef =>{
+            let repo = gitfns::repo_find(".", true).unwrap();
+            let refs = gitfns::ref_list(&repo, None).unwrap();
+            gitfns::show_ref(&refs, true, "refs");
+            println!("git show-ref");
+        }
+            
 
         Commands::Status =>
             println!("git status"),
 
-        Commands::Tag =>
-            println!("git tag"),
+        Commands::Tag {create_tag_object, name, object} => {
+            let repo = gitfns::repo_find(".", true).unwrap();
+            
+            if !name.is_empty(){
+                gitobj::tag_create(&repo, &name, &object, create_tag_object);
+            }
+            else{
+                let refs = gitfns::ref_list(&repo, None).unwrap();
+                gitfns::show_ref(&refs, true, "refs");
+            }
+            println!("git tag");
+        }
     }
 
 }

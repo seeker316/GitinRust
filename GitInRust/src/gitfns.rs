@@ -2,8 +2,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use configparser::ini::Ini;
 use std::io;
+use dict::{Dict, DictIface};
+pub use flate2::{read::ZlibDecoder, write::ZlibEncoder, Compression};
 
-use flate2::reader::ZlibDecoder;
 
 pub struct GitRepo{
     worktree: PathBuf,
@@ -73,9 +74,9 @@ pub fn repo_create(path : impl AsRef<Path>)->io::Result<GitRepo>
 }
 
 pub fn repo_find(path : impl AsRef<Path>, required : bool)->io::Result<GitRepo> {
-    path = fs::canonicalize(path)?;
+    let path = fs::canonicalize(path)?;
     if path.join(".git").is_dir(){
-        return Ok(Some(GitRepo::new(path)?));
+        return Ok(GitRepo::new(path));
     }
 
     let parent = match path.parent(){
@@ -87,12 +88,15 @@ pub fn repo_find(path : impl AsRef<Path>, required : bool)->io::Result<GitRepo> 
                         "No git directory",
                 ));
             } else {
-                return Ok(None);
+                return Err(io::Error::new(
+                        io::ErrorKind::NotFound,
+                        "No git repository found",
+                ));
             }
         }
     };
     
-    repo_find(parent, required);
+    repo_find(parent, required)
 }
 
 
@@ -180,4 +184,108 @@ impl GitRepo{
 
 }
 
+    pub fn ref_resolve(repo: &GitRepo, git_ref: &str) -> io::Result<Option<String>> {
 
+        let path = repo.repo_file([git_ref], false)?;
+
+        if !path.is_file(){
+            return Ok(None);
+        }
+
+        let data = fs::read_to_string(path)?;
+
+        let data = data.trim_end();
+        
+        if data.starts_with("ref: "){
+            let next_ref = &data[5..];
+            ref_resolve(repo, next_ref)
+        } else{
+
+            Ok(Some(data.to_string()))
+        }
+    }
+
+pub enum GitRef {
+    Value(Option<String>),
+    Node(Dict<GitRef>),
+}
+
+pub fn ref_list(repo: &GitRepo, path: Option<PathBuf>) -> io::Result<Dict<GitRef>>{
+    let path = match path {
+        Some(p) => p,
+        None => repo.repo_dir(["refs"], false)?,
+    };
+
+    let mut ret = Dict::<GitRef>::new();
+    
+    let mut entries: Vec<_> =
+        fs::read_dir(&path)?
+            .collect::<Result<Vec<_>, _>>()?;
+
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let can = entry.path();
+        let name = entry
+            .file_name()
+            .to_string_lossy()
+            .to_string();
+
+        if can.is_dir() {
+            let subtree =
+                ref_list(repo, Some(can))?;
+
+            ret.add(name,GitRef::Node(subtree),);
+
+        } else {
+            let relative = can.strip_prefix(&repo.gitdir).unwrap();
+
+            let resolved = ref_resolve(repo,relative.to_str().unwrap(),)?;
+            ret.add(name, GitRef::Value(resolved),);
+        }
+    }
+
+    Ok(ret)
+}       
+
+pub fn show_ref(refs: &Dict<GitRef>, with_hash : bool, prefix : &str){
+    
+    let prefix = if prefix.is_empty(){
+        String::new()
+    } else {
+        format!("{}/",prefix)
+    };
+
+    for entry in refs.iter(){
+        let k = &entry.key;
+        let v = &entry.val;
+        match v {
+            GitRef::Value(Some(hash)) => {
+                if with_hash {
+                    println!(
+                        "{} {}{}",
+                        hash,
+                        prefix,
+                        k
+                    );
+                } else {
+                    println!(
+                        "{}{}",
+                        prefix,
+                        k
+                    );
+                }
+            }
+            GitRef::Value(None) => {
+
+            }
+
+            GitRef::Node(subtree) => {
+                let new_prefix = format!("{} {}", prefix, k);
+
+                show_ref(&subtree, with_hash, &new_prefix);
+            }
+
+        }
+    }
+}
